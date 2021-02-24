@@ -1,0 +1,65 @@
+#include "stm32f4xx.h"
+#include "stm32f401_discovery.h"
+#include "defines.h"
+#include "tm_stm32f4_pwm.h"
+#include "tm_stm32f4_delay.h"
+#include "tm_stm32f4_mpu6050.h"
+#include "math.h"
+
+uint8_t flag;
+TM_PWM_TIM_t TIM4_Data;
+double Ayz, Ayz1;
+
+int main(void) {
+
+	TM_PWM_InitTimer(TIM4, &TIM4_Data, 1000);
+	TM_PWM_InitChannel(&TIM4_Data, TM_PWM_Channel_1, TM_PWM_PinsPack_2);
+	TM_PWM_InitChannel(&TIM4_Data, TM_PWM_Channel_2, TM_PWM_PinsPack_2);
+	TM_PWM_InitChannel(&TIM4_Data, TM_PWM_Channel_3, TM_PWM_PinsPack_2);
+	TM_PWM_InitChannel(&TIM4_Data, TM_PWM_Channel_4, TM_PWM_PinsPack_2);
+
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_1, 1000);
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_2, 0);
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_3, 1000);
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_4, 0);
+
+	flag = 0;
+	TM_MPU6050_t data;
+	Ayz = 0;
+	Ayz1 = 0;
+
+	TM_DELAY_Init();
+	TM_MPU6050_Init(&data, TM_MPU6050_Device_0, TM_MPU6050_Accelerometer_4G,TM_MPU6050_Gyroscope_500s);
+	while (1)
+	{
+			Delayms(10);
+			STM_EVAL_LEDToggle(LED5);
+			TM_MPU6050_ReadAll(&data);
+			Ayz = 180 / 3.1428 * atan2(data.Accelerometer_Y, data.Accelerometer_Z);
+			if (!flag)
+			{
+				Ayz1 = Ayz;
+				flag = 1;
+	        }
+			else
+				Ayz1 = 0.8 * (Ayz1 + (data.Gyroscope_X * data.Gyro_Mult) * 0.01) + 0.2 * Ayz;
+	}
+}
+
+/*
+ * Callback used by stm32f401_discovery_audio_codec.c.
+ * Refer to stm32f401_discovery_audio_codec.h for more info.
+ */
+void EVAL_AUDIO_TransferComplete_CallBack(uint32_t pBuffer, uint32_t Size) {
+	/* TODO, implement your code here */
+	return;
+}
+
+/*
+ * Callback used by stm32f401_discovery_audio_codec.c.
+ * Refer to stm32f401_discovery_audio_codec.h for more info.
+ */
+uint16_t EVAL_AUDIO_GetSampleCallBack(void) {
+	/* TODO, implement your code here */
+	return -1;
+}

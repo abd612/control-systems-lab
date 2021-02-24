@@ -1,0 +1,24 @@
+--cpu=Cortex-M4.fp
+"motorspeed\system_stm32f4xx.o"
+"motorspeed\stm32f4xx_hal_msp.o"
+"motorspeed\main.o"
+"motorspeed\stm32f4xx_it.o"
+"motorspeed\stm32f4xx_hal_rcc_ex.o"
+"motorspeed\stm32f4xx_hal_rcc.o"
+"motorspeed\stm32f4xx_hal_flash.o"
+"motorspeed\stm32f4xx_hal_pwr.o"
+"motorspeed\stm32f4xx_hal_tim.o"
+"motorspeed\stm32f4xx_hal_cortex.o"
+"motorspeed\stm32f4xx_hal_tim_ex.o"
+"motorspeed\stm32f4xx_hal_flash_ex.o"
+"motorspeed\stm32f4xx_hal_gpio.o"
+"motorspeed\stm32f4xx_hal.o"
+"motorspeed\stm32f4xx_hal_pwr_ex.o"
+"motorspeed\stm32f4xx_hal_flash_ramfunc.o"
+"motorspeed\stm32f4xx_hal_dma_ex.o"
+"motorspeed\stm32f4xx_hal_dma.o"
+"motorspeed\startup_stm32f401xc.o"
+--library_type=microlib --strict --scatter "MotorSpeed\MotorSpeed.sct"
+--diag_suppress=L6329 --summary_stderr --info summarysizes --map --xref --callgraph --symbols
+--info sizes --info totals --info unused --info veneers
+--list "MotorSpeed.map" -o MotorSpeed\MotorSpeed.axf

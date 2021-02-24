@@ -1,0 +1,176 @@
+
+
+/* Includes */
+#include "stm32f4xx.h"
+#include "defines.h"
+#include "tm_stm32f4_pwm.h"
+#include <stdio.h>
+#include "tm_stm32f4_mpu6050.h"
+#include <math.h>
+
+/* Global variables*/
+volatile float pwml1,pwml2,pwmr1,pwmr2,PWM;
+volatile float ax,ay,az,gx,gy,gz,temp;
+volatile int sensor;
+volatile float roll,pitch,roll_angle;
+volatile float accel_x,accel_y,accel_z;
+volatile float duty,error,E1=0,E2=0,ES;
+volatile int dtim,stim,etim;
+volatile float dt;
+
+TM_MPU6050_t MPU6050_Data0;
+TM_PWM_TIM_t TIM4_Data;
+GPIO_InitTypeDef GPIO_ON;
+
+void delay(__IO uint32_t ncount)
+{
+	while(ncount--)
+	{
+
+	}
+
+}
+
+void InitializeTimer1()
+{
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
+
+    TIM_TimeBaseInitTypeDef timerInitStructure1;
+    timerInitStructure1.TIM_Prescaler = 15;
+    timerInitStructure1.TIM_CounterMode = TIM_CounterMode_Up;
+    timerInitStructure1.TIM_Period = 999;
+    timerInitStructure1.TIM_ClockDivision = TIM_CKD_DIV1;
+    timerInitStructure1.TIM_RepetitionCounter = 0;
+    TIM_TimeBaseInit(TIM2, &timerInitStructure1);
+    TIM_Cmd(TIM2, ENABLE);
+}
+
+void Forward(float speed)
+{
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_1, speed);
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_2, 0);
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_3, speed);
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_4, 0);
+
+}
+
+void Right(float speed)
+{
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_1, 0);
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_2, speed);
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_3, speed);
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_4, 0);
+
+}
+
+void Left(float speed)
+{
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_1, speed);
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_2, 0);
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_3, 0);
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_4, speed);
+
+}
+
+void Backward(float speed)
+{
+
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_1, 0);
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_2, speed);
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_3, 0);
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_4, speed);
+}
+
+void Stop ()
+{
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_1, 0);
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_2, 0);
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_3, 0);
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_4, 0);
+
+}
+
+void rp()
+{
+  //accel_x= atan2(ax,(sqrt(ay*ay + az*az)))* 180/3.14;
+  //accel_y= atan2(ay,(sqrt(ax*ax + az*az)))* 180/3.14;
+  //accel_z= atan2((sqrt(ay*ay + ax*ax)),az)* 180/3.14;
+
+  gx=(gx/131.07);
+  //gy=(gy/131.07);
+ // gz=(gz/131.07);
+
+  roll =(0.98)*(roll+gx*0.008) + (0.02*ay);
+  //pitch =  (0.98)*(pitch+gy*0.008) + (0.02*ax);
+}
+
+volatile float Kp=1;
+volatile float Kd=5;
+volatile float Ki=0;
+
+double PID(double dt)
+{
+
+	E1=E2;
+	E2=error;
+	ES=ES+(error*dt);
+	float output=(Kp*error)+Kd*((E2-E1)/dt)+Ki*ES;
+	return output;
+}
+
+
+int main(void)
+{
+
+
+	int ref=0;
+	int in_min=-4060;
+	int in_max=4060;
+	int out_min=-90;
+	int out_max=+90;
+	int i=0;
+
+
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC,ENABLE);
+	GPIO_ON.GPIO_Pin=GPIO_Pin_7;
+	GPIO_ON.GPIO_Mode=GPIO_Mode_OUT;
+	GPIO_ON.GPIO_Speed=GPIO_Speed_50MHz;
+	GPIO_ON.GPIO_PuPd=GPIO_OType_PP;
+
+	GPIO_Init(GPIOC,&GPIO_ON);
+	GPIO_WriteBit(GPIOC,GPIO_Pin_7,Bit_SET);
+	sensor = 0;
+	SystemInit();
+	/* Set PWM to 1kHz frequency on timer TIM4 */
+		/* 1 kHz = 1ms = 1000us */
+	TM_PWM_InitTimer(TIM4, &TIM4_Data, 1000);
+
+
+	/* Initialize PWM on TIM4, Channel 1 and PinsPack 2 = PD12,PD13,PD14,PD15 */
+	TM_PWM_InitChannel(&TIM4_Data, TM_PWM_Channel_1, TM_PWM_PinsPack_2);
+	TM_PWM_InitChannel(&TIM4_Data, TM_PWM_Channel_2, TM_PWM_PinsPack_2);
+	TM_PWM_InitChannel(&TIM4_Data, TM_PWM_Channel_3, TM_PWM_PinsPack_2);
+	TM_PWM_InitChannel(&TIM4_Data, TM_PWM_Channel_4, TM_PWM_PinsPack_2);
+
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_1, pwml1);
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_2, pwml2);
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_3, pwmr1);
+	TM_PWM_SetChannelPercent(&TIM4_Data, TM_PWM_Channel_4, pwmr2);
+
+	/* Initialize MPU6050 sensor 0, address = 0xD0, AD0 pin on sensor is low */
+	if (TM_MPU6050_Init(&MPU6050_Data0, TM_MPU6050_Device_0, TM_MPU6050_Accelerometer_8G, TM_MPU6050_Gyroscope_250s) == TM_MPU6050_Result_Ok) {
+		/* MPU OK */
+		sensor = 1;
+	}
+
+	InitializeTimer1();
+  while (1)
+  {
+
+  }
+}
+
+
+
+
+

@@ -1,0 +1,163 @@
+#include "stm32f4xx.h"
+#include "stm32f401_discovery.h"
+#include "defines.h"
+#include "tm_stm32f4_pwm.h"
+#include "tm_stm32f4_delay.h"
+#include "tm_stm32f4_mpu6050.h"
+#include "math.h"
+
+void PWMInit(void);
+void AngleMeasure(void);
+void PIDCalculate(void);
+void PWMSet(void);
+void Advance(int pwm);
+void Retreat(int pwm);
+
+int First = 0;
+int PrescalerValue = 83;
+int PeriodValue = 999;
+int PWM = 0, MaxPWM = 999;
+double AngleOrig = 0, AngleComp = 0, AngleRef = 0, AngleMax = 30;
+double Error = 0, PrevError = 0;
+double IntError = 0, DerError = 0;
+double PID = 0, DelT = 0;
+__IO double Kp = 1, Ki = 0, Kd = 0;
+
+TM_MPU6050_t data;
+
+int main(void)
+{
+	PWMInit();
+	TM_DELAY_Init();
+	TM_MPU6050_Init(&data, TM_MPU6050_Device_0, TM_MPU6050_Accelerometer_4G,TM_MPU6050_Gyroscope_500s);
+
+	while (1)
+	{
+		AngleMeasure();
+		PIDCalculate();
+		PWMSet();
+	}
+}
+
+void PIDCalculate(void)
+{
+	Error = AngleRef - AngleComp;
+	DelT = 0.01;
+
+	IntError += (Error * DelT);
+	DerError = (Error - PrevError) / DelT;
+	PID = (Kp * Error) + (Ki * IntError) + (Kd * DerError);
+
+	PrevError = Error;
+}
+
+void PWMSet(void)
+{
+	PWM = (MaxPWM * PID) / AngleMax;
+	if (PWM > MaxPWM) PWM = MaxPWM;
+	if (PWM < (-1)*MaxPWM) PWM = (-1)*MaxPWM;
+
+	if(Error > 0)
+		Advance(PWM);
+	if (Error < 0)
+		Retreat((-1)*PWM);
+}
+
+void Advance(int pwm)
+{
+	TIM4->CCR1 = pwm;
+	TIM4->CCR2 = 0;
+	TIM4->CCR3 = pwm;
+	TIM4->CCR4 = 0;
+}
+
+void Retreat(int pwm)
+{
+	TIM4->CCR1 = 0;
+	TIM4->CCR2 = pwm;
+	TIM4->CCR3 = 0;
+	TIM4->CCR4 = pwm;
+}
+
+void AngleMeasure (void)
+{
+	Delayms(10);
+	STM_EVAL_LEDToggle(LED5);
+	TM_MPU6050_ReadAll(&data);
+	AngleOrig = 180 / 3.1428 * atan2(data.Accelerometer_Y, data.Accelerometer_Z);
+	if (!First)
+	{
+		AngleComp = AngleOrig;
+		First = 1;
+    }
+	else
+		AngleComp = 0.8 * (AngleComp + (data.Gyroscope_X * data.Gyro_Mult) * 0.01) + 0.2 * AngleOrig;
+}
+
+void PWMInit (void)
+{
+	TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
+	TIM_OCInitTypeDef TIM_OCInitStructure;
+	GPIO_InitTypeDef GPIO_InitStructure;
+
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM4, ENABLE);
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD, ENABLE);
+
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_12 | GPIO_Pin_13 | GPIO_Pin_14 | GPIO_Pin_15;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+	GPIO_Init(GPIOD, &GPIO_InitStructure);
+
+	GPIO_PinAFConfig(GPIOD, GPIO_PinSource12, GPIO_AF_TIM4);
+	GPIO_PinAFConfig(GPIOD, GPIO_PinSource13, GPIO_AF_TIM4);
+	GPIO_PinAFConfig(GPIOD, GPIO_PinSource14, GPIO_AF_TIM4);
+	GPIO_PinAFConfig(GPIOD, GPIO_PinSource15, GPIO_AF_TIM4);
+
+	TIM_TimeBaseStructure.TIM_Period = PeriodValue;
+	TIM_TimeBaseStructure.TIM_Prescaler = PrescalerValue;
+	TIM_TimeBaseStructure.TIM_ClockDivision = 0;
+	TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
+
+	TIM_TimeBaseInit(TIM4, &TIM_TimeBaseStructure);
+
+	TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_PWM1;
+	TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable;
+	TIM_OCInitStructure.TIM_Pulse = 0;
+	TIM_OCInitStructure.TIM_OCPolarity = TIM_OCPolarity_High;
+
+	TIM_OC1Init(TIM4, &TIM_OCInitStructure);
+	TIM_OC1PreloadConfig(TIM4, TIM_OCPreload_Enable);
+
+	TIM_OC2Init(TIM4, &TIM_OCInitStructure);
+	TIM_OC2PreloadConfig(TIM4, TIM_OCPreload_Enable);
+
+	TIM_OC3Init(TIM4, &TIM_OCInitStructure);
+	TIM_OC3PreloadConfig(TIM4, TIM_OCPreload_Enable);
+
+	TIM_OC4Init(TIM4, &TIM_OCInitStructure);
+	TIM_OC4PreloadConfig(TIM4, TIM_OCPreload_Enable);
+
+	TIM_ARRPreloadConfig(TIM4, ENABLE);
+
+	TIM_Cmd(TIM4, ENABLE);
+}
+
+/*
+ * Callback used by stm32f401_discovery_audio_codec.c.
+ * Refer to stm32f401_discovery_audio_codec.h for more info.
+ */
+void EVAL_AUDIO_TransferComplete_CallBack(uint32_t pBuffer, uint32_t Size) {
+	/* TODO, implement your code here */
+	return;
+}
+
+/*
+ * Callback used by stm32f401_discovery_audio_codec.c.
+ * Refer to stm32f401_discovery_audio_codec.h for more info.
+ */
+uint16_t EVAL_AUDIO_GetSampleCallBack(void) {
+	/* TODO, implement your code here */
+	return -1;
+}
